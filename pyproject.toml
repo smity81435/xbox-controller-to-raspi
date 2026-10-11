@@ -1,0 +1,23 @@
+[project]
+name = "xboxpi"
+version = "0.1.0"
+description = "Xbox controllers on a Raspberry Pi: reliable Bluetooth pairing, a diagnostics tool, and a small callback API over evdev."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["evdev>=1.7; sys_platform == 'linux'"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+xboxpi = "xboxpi.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["xboxpi*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
