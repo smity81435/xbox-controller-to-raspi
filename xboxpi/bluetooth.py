@@ -121,10 +121,13 @@ def pair(name: str = "Xbox Wireless Controller", timeout: float = 90, mac: str |
         for cmd in ("power on", "agent NoInputNoOutput", "default-agent", "pairable on", "scan on"):
             s.say(cmd)
         log(f"scanning for '{name}' (hold the pair button until the logo flashes fast) ...")
+        pinned = bool(mac)
         if mac:
             found = s.wait(rf"Device ({re.escape(mac.upper())})\b", timeout)
         else:
-            found = s.wait(rf"Device ({MAC}) {re.escape(name)}", timeout)
+            # Same exact-name pattern as candidates(), so a lookalike such as
+            # "<name> Pro" can neither be picked here nor dodge the duplicate check.
+            found = s.wait(name_pattern(name), timeout)
         if not found:
             log("not found")
             return None
@@ -146,14 +149,21 @@ def pair(name: str = "Xbox Wireless Controller", timeout: float = 90, mac: str |
             return None
         s.say(f"connect {mac}")
         s.wait(r"Connection successful|Failed to connect", 20)
-        # Only trust it (auto-reconnect) once it identifies as a Microsoft device.
-        vendor = vendor_id(info(mac))
-        if vendor and vendor != MICROSOFT:
-            log(f"{mac} reports vendor {vendor}, not Microsoft ({MICROSOFT}); removing it")
+        # Only trust it (auto-reconnect) once it identifies as a Microsoft
+        # device. The id shows up a moment after connecting, so poll briefly.
+        vendor = None
+        for _ in range(10):
+            vendor = vendor_id(info(mac))
+            if vendor:
+                break
+            time.sleep(1)
+        ok, reason = trust_decision(vendor, pinned)
+        if not ok:
+            log(f"{mac}: {reason}; removing it")
             s.say(f"remove {mac}")
             return None
-        if not vendor:
-            log("warning: could not read the vendor id; check `xboxpi doctor`")
+        if reason:
+            log(f"note: {reason}")
         s.say(f"trust {mac}")
         s.wait(r"trust succeeded", 5)
         return mac
@@ -163,10 +173,27 @@ def pair(name: str = "Xbox Wireless Controller", timeout: float = 90, mac: str |
         s.close()
 
 
+def name_pattern(name: str) -> str:
+    """A discovery line for a device advertising exactly `name`."""
+    return rf"Device ({MAC}) {re.escape(name)}\s*$"
+
+
 def candidates(lines: list[str], name: str) -> set[str]:
-    """MACs of every discovered device advertising `name`."""
-    rx = re.compile(rf"Device ({MAC}) {re.escape(name)}\s*$")
+    """MACs of every discovered device advertising exactly `name`."""
+    rx = re.compile(name_pattern(name))
     return {m.group(1) for line in lines if (m := rx.search(line.strip()))}
+
+
+def trust_decision(vendor: str | None, pinned: bool) -> tuple[bool, str]:
+    """Fail closed: trust only a Microsoft vendor id, or an unreadable id when
+    the user pinned the exact address with --mac."""
+    if vendor == MICROSOFT:
+        return True, ""
+    if vendor:
+        return False, f"reports vendor {vendor}, not Microsoft ({MICROSOFT})"
+    if pinned:
+        return True, "vendor id unreadable; trusting it because you pinned it with --mac"
+    return False, "vendor id unreadable, so it can't be verified (pin it with --mac to override)"
 
 
 def vendor_id(fields: dict[str, str]) -> str | None:

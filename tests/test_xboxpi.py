@@ -1,5 +1,7 @@
 from xboxpi import Axis, Button, Dispatcher
-from xboxpi.bluetooth import candidates, product_id, vendor_id
+import re
+
+from xboxpi.bluetooth import candidates, name_pattern, product_id, trust_decision, vendor_id
 from xboxpi.buttons import (ABS_BRAKE, ABS_GAS, ABS_HAT0X, ABS_RX, ABS_X, ABS_Z, EV_ABS, EV_KEY,
                             LAYOUT_BLUETOOTH, LAYOUT_USB, layout_for)
 from xboxpi.doctor import controller_check
@@ -82,3 +84,17 @@ def test_pairing_spots_lookalikes_and_checks_vendor():
     assert vendor_id({"Modalias": "usb:v045Ep0B20d0523"}) == "045E"
     assert vendor_id({"Modalias": "usb:v1D6Bp0246d0540"}) == "1D6B"
     assert vendor_id({}) is None
+
+
+def test_scan_pattern_rejects_lookalike_names():
+    rx = re.compile(name_pattern("Xbox Wireless Controller"))
+    assert rx.search("[NEW] Device 5C:BA:37:F6:6E:4D Xbox Wireless Controller\n")
+    assert not rx.search("[NEW] Device AA:BB:CC:DD:EE:FF Xbox Wireless Controller Pro\n")
+
+
+def test_trust_fails_closed():
+    assert trust_decision("045E", pinned=False)[0]
+    assert not trust_decision("1D6B", pinned=False)[0]
+    assert not trust_decision("1D6B", pinned=True)[0]  # pinning never overrides a wrong vendor
+    assert not trust_decision(None, pinned=False)[0]
+    assert trust_decision(None, pinned=True)[0]

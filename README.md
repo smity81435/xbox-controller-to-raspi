@@ -28,7 +28,7 @@ sudo usermod -aG input $USER   # then log out and back in
 .venv/bin/xboxpi pair
 ```
 
-Anyone nearby can advertise the same Bluetooth name, so `pair` refuses if it sees more than one, and only trusts a device that reports Microsoft as its maker. In a busy place, pin your controller with `--mac` (its address is shown by `xboxpi pair` or `bluetoothctl devices`).
+Anyone nearby can advertise the same Bluetooth name, so `pair` refuses if it sees more than one, and only trusts a device that reports Microsoft as its maker (if it can't tell, it won't trust it unless you pinned it with `--mac`). In a busy place, pin your controller with `--mac` (its address is shown by `xboxpi pair` or `bluetoothctl devices`).
 
 3. Check everything:
 
