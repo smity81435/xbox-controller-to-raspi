@@ -16,6 +16,7 @@ import time
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x01|\x02")
 MAC = r"[0-9A-F]{2}(?::[0-9A-F]{2}){5}"
+MICROSOFT = "045E"
 
 # Xbox controller product ids (vendor 045E). Classic-Bluetooth firmware on the
 # One S reports a HID descriptor older Linux kernels can't parse; the BLE
@@ -93,6 +94,15 @@ class _Session:
                 return m
         return None
 
+    def drain(self, seconds: float) -> None:
+        """Collect output for `seconds` without waiting on anything in particular."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            try:
+                self.seen.append(self.lines.get(timeout=0.2))
+            except queue.Empty:
+                pass
+
     def close(self) -> None:
         try:
             self.say("quit")
@@ -101,27 +111,65 @@ class _Session:
             self.proc.kill()
 
 
-def pair(name: str = "Xbox Wireless Controller", timeout: float = 90, log=print) -> str | None:
+def pair(name: str = "Xbox Wireless Controller", timeout: float = 90, mac: str | None = None,
+         log=print) -> str | None:
     """Scan for `name` (put the controller in pairing mode first), then pair,
-    bond, trust and connect it. Returns its MAC, or None if it never appeared."""
+    bond, connect and trust it. Pass `mac` to pin one controller. Returns its
+    MAC, or None if it never appeared or did not check out."""
     s = _Session()
     try:
         for cmd in ("power on", "agent NoInputNoOutput", "default-agent", "pairable on", "scan on"):
             s.say(cmd)
         log(f"scanning for '{name}' (hold the pair button until the logo flashes fast) ...")
-        m = s.wait(rf"Device ({MAC}) {re.escape(name)}", timeout)
-        if not m:
+        if mac:
+            found = s.wait(rf"Device ({re.escape(mac.upper())})\b", timeout)
+        else:
+            found = s.wait(rf"Device ({MAC}) {re.escape(name)}", timeout)
+        if not found:
             log("not found")
             return None
-        mac = m.group(1)
+        if not mac:
+            # Anyone nearby can advertise this name. If more than one device
+            # does, don't guess: make the user pick with --mac.
+            s.drain(4)
+            matches = candidates(s.seen, name)
+            if len(matches) > 1:
+                log(f"several devices are called '{name}': {', '.join(sorted(matches))}. "
+                    "Run again with --mac <address> to pick yours.")
+                return None
+        mac = found.group(1)
         log(f"found {mac}, pairing ...")
         s.say("scan off")
         s.say(f"pair {mac}")
         if not s.wait(r"Pairing successful|AlreadyExists", 30):
             log("pairing did not complete")
-        s.say(f"trust {mac}")
+            return None
         s.say(f"connect {mac}")
         s.wait(r"Connection successful|Failed to connect", 20)
+        # Only trust it (auto-reconnect) once it identifies as a Microsoft device.
+        vendor = vendor_id(info(mac))
+        if vendor and vendor != MICROSOFT:
+            log(f"{mac} reports vendor {vendor}, not Microsoft ({MICROSOFT}); removing it")
+            s.say(f"remove {mac}")
+            return None
+        if not vendor:
+            log("warning: could not read the vendor id; check `xboxpi doctor`")
+        s.say(f"trust {mac}")
+        s.wait(r"trust succeeded", 5)
         return mac
     finally:
+        s.say("scan off")
+        s.say("pairable off")
         s.close()
+
+
+def candidates(lines: list[str], name: str) -> set[str]:
+    """MACs of every discovered device advertising `name`."""
+    rx = re.compile(rf"Device ({MAC}) {re.escape(name)}\s*$")
+    return {m.group(1) for line in lines if (m := rx.search(line.strip()))}
+
+
+def vendor_id(fields: dict[str, str]) -> str | None:
+    """'045E' from Modalias 'usb:v045Ep0B20d0523'."""
+    m = re.search(r"v([0-9A-F]{4})p", fields.get("Modalias", ""), re.I)
+    return m.group(1).upper() if m else None

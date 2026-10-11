@@ -1,5 +1,5 @@
 from xboxpi import Axis, Button, Dispatcher
-from xboxpi.bluetooth import product_id
+from xboxpi.bluetooth import candidates, product_id, vendor_id
 from xboxpi.buttons import (ABS_BRAKE, ABS_GAS, ABS_HAT0X, ABS_RX, ABS_X, ABS_Z, EV_ABS, EV_KEY,
                             LAYOUT_BLUETOOTH, LAYOUT_USB, layout_for)
 from xboxpi.doctor import controller_check
@@ -69,3 +69,16 @@ def test_firmware_detection():
     new = controller_check("AA:BB:CC:DD:EE:FF", "Xbox Wireless Controller",
                            {"Modalias": "usb:v045Ep0B20d0523", "Bonded": "yes", "Trusted": "yes", "Connected": "yes"})
     assert all(c.ok for c in new)
+
+
+def test_pairing_spots_lookalikes_and_checks_vendor():
+    lines = [
+        "[NEW] Device 5C:BA:37:F6:6E:4D Xbox Wireless Controller",
+        "[CHG] Device 5C:BA:37:F6:6E:4D RSSI: -60",
+        "[NEW] Device 11:22:33:44:55:66 Xbox Wireless Controller",
+        "[NEW] Device AA:BB:CC:DD:EE:FF Xbox Wireless Controller Pro",
+    ]
+    assert candidates(lines, "Xbox Wireless Controller") == {"5C:BA:37:F6:6E:4D", "11:22:33:44:55:66"}
+    assert vendor_id({"Modalias": "usb:v045Ep0B20d0523"}) == "045E"
+    assert vendor_id({"Modalias": "usb:v1D6Bp0246d0540"}) == "1D6B"
+    assert vendor_id({}) is None

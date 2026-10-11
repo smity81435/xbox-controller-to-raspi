@@ -10,7 +10,7 @@ import sys
 def cmd_pair(args) -> int:
     from . import bluetooth
 
-    mac = bluetooth.pair(args.name, timeout=args.timeout)
+    mac = bluetooth.pair(args.name, timeout=args.timeout, mac=args.mac)
     if not mac:
         return 1
     fields = bluetooth.info(mac)
@@ -77,6 +77,7 @@ def main() -> None:
     p = sub.add_parser("pair", help="pair, bond and trust a controller in pairing mode")
     p.add_argument("--name", default="Xbox Wireless Controller", help="Bluetooth name to look for")
     p.add_argument("--timeout", type=float, default=90, help="seconds to scan")
+    p.add_argument("--mac", help="pair only this controller address (recommended in busy places)")
     p.set_defaults(fn=cmd_pair)
 
     p = sub.add_parser("doctor", help="check Bluetooth, permissions, pairing and firmware")
